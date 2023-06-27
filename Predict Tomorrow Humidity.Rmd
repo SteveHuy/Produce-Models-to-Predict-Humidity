@@ -1,0 +1,519 @@
+---
+title: "FIT3152 Assignment 2"
+output:
+  word_document: default
+  html_document: default
+date: "2023-04-24"
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+WAUS <- read.csv("HumidPredict2023D.csv")
+L <- as.data.frame(c(1:49))
+set.seed(32463448) # Your Student ID is the random seed
+L <- L[sample(nrow(L), 10, replace = FALSE),] # sample 10 locations
+WAUS <- WAUS[(WAUS$Location %in% L),]
+WAUS <- WAUS[sample(nrow(WAUS), 2000, replace = FALSE),] # sample 2000 rows
+```
+
+```{r include=FALSE}
+library(ggplot2)
+library(zoo)
+library(tidyverse)
+library(caret) 
+
+```
+
+## 
+
+## 1. Explore the data: What is the proportion of days when it is more humid than the previous day compared to those where it is less humid? Obtain descriptions of the predictor (independent) variables -- mean, standard deviations, etc. for real-valued attributes. Is there anything noteworthy in the data? Are there any attributes you need to consider omitting from your analysis?
+
+#### What is the proportion of days when it is more humid than the previous day compared to those where it is less humid?
+
+```{r}
+WAUS %>% count(MHT)
+```
+
+So we can see there is 974:954. So there is a larger proportion of more humid than less humid. Furthermore, there is 72 nulls.
+
+#### Obtain descriptions of the predictor (independent) variables -- mean, standard deviations, etc. for real-valued attributes.
+
+```{r}
+WAUS[c(3:7, 9, 12, 13, 16, 17, 19,21)] %>% summary()
+```
+
+#### Is there anything noteworthy in the data? Are there any attributes you need to consider omitting from your analysis?
+
+Cloud3pm and Cloud9am have lots of nulls. They are null for 50% of the data. Furthermore, Evaporation has a lot of nulls within the dataset too
+
+```{r message=FALSE, include=FALSE}
+WAUS[WAUS$Location == 18,]
+```
+
+Furthermore, there is not a single value for Evaporation and Sunshine for Location 18.
+
+Evaporation, Sunshine, Cloud9am, Cloud3pm has a significant amount of nulls.
+
+WindGustDir, WindDir9am and WindDir3pm as the Directions cannot be standardised therefore, the data cannot be tidy.
+
+Furthermore, the Year doesn't tell us about the humidity unless we do further research within what has occurred within that year such as Bushfires which may affect humidity.
+
+Lastly, let's remove RainToday and Rainfall already answers that for us and RISK_MM.
+
+## 2. Document any pre-processing required to make the data set suitable for the model fitting that follows.
+
+Lets delete the attributes mentioned above.
+
+```{r}
+#WAUS = WAUS[,-c(1,6,7,8,10,11,16,17,20,21)]
+```
+
+Now lets see the nulls
+
+```{r}
+colSums(is.na(WAUS))
+
+```
+
+```{r}
+str(WAUS)
+
+```
+
+Let's set anything as numeric so we can use the model on them
+
+```{r}
+WAUS[c(9,12,13,16,17)] = lapply(WAUS[c(9,12,13,16,17)], as.numeric)
+```
+
+Also let's delete all of the MHT which are nulls as we will not be attempting to standardise those nulls.
+
+```{r warning=FALSE}
+WAUS = WAUS %>% drop_na(MHT)
+WAUS$MHT = as.factor(WAUS$MHT)
+
+```
+
+## 3.Divide your data into a 70% training and 30% test set by adapting the following code (written for the iris data). Use your student ID as the random seed.
+
+```{r}
+set.seed(32463448) #Student ID as random seed
+train.row = sample(1:nrow(WAUS), 0.7*nrow(WAUS))
+WAUS.train = WAUS[train.row,]
+WAUS.test = WAUS[-train.row,]
+```
+
+## 4. and 5. Implement a classification model and test their accuracy
+
+### Decision Tree
+
+```{r}
+library(tree)
+library(rpart)
+library(rpart.plot)
+
+```
+
+```{r warning=FALSE}
+tree = tree(MHT~., data = WAUS.train, method = 'prob')
+plot(tree)
+text(tree, pretty = 0)
+```
+
+```{r warning=FALSE}
+predict_tree = predict(tree, WAUS.test, type = "class")
+confusion_matrix_tree = table(WAUS.test$MHT, predict_tree)
+confusionMatrix(confusion_matrix_tree)
+
+```
+
+#### Naïve Bayes
+
+```{r}
+library(e1071)
+```
+
+```{r}
+bayes = naiveBayes(MHT ~., data = WAUS.train, type = "raw")
+
+```
+
+```{r}
+predict_bayes = predict(bayes, WAUS.test)
+confusion_matrix_bayes = table(WAUS.test$MHT, predict_bayes)
+confusionMatrix(confusion_matrix_bayes)
+```
+
+#### Bagging
+
+```{r include=FALSE}
+library(adabag)
+```
+
+```{r}
+bag = bagging(MHT ~., data = WAUS.train, mfinal = 10)
+```
+
+```{r}
+predict_bag = predict.bagging(bag, newdata = WAUS.test)
+confusion_matrix_bag = table(observed = WAUS.test$MHT, predicted = predict_bag$class)
+confusionMatrix(confusion_matrix_bag)
+```
+
+#### Boosting
+
+```{r}
+boost <- boosting(MHT ~ ., data = WAUS.train, mfinal=10)
+```
+
+```{r}
+predict_boost = predict.boosting(boost, WAUS.test)
+confusion_matrix_boost = table(observed = WAUS.test$MHT, predicted = predict_boost$class)
+confusionMatrix(confusion_matrix_boost)
+```
+
+#### Random Trees
+
+```{r include=FALSE}
+library(randomForest)
+```
+
+```{r include=FALSE}
+WAUSrf = WAUS
+WAUSrf = WAUSrf[-c(8,10,11,20)]
+WAUSrf %>% drop_na(Year)
+
+WAUSrf = na.roughfix(WAUSrf)
+train.row = sample(1:nrow(WAUSrf), 0.7*nrow(WAUSrf))
+WAUSrf.train = WAUSrf[train.row,]
+WAUSrf.test = WAUSrf[-train.row,]
+
+```
+
+```{r}
+randomForest = randomForest(MHT~., data = WAUSrf.train)
+```
+
+```{r}
+predict_rf = predict(randomForest, WAUSrf.test)
+confusion_matrix_rf = table(observed = WAUSrf.test$MHT, predicted = predict_rf)
+confusionMatrix(confusion_matrix_rf)
+```
+
+## 6. Calculate the Confidence and construct ROC
+
+Firstly lets make the ROC graph
+
+```{r}
+library(ROCR)
+library(plotROC)
+
+```
+
+```{r warning=FALSE}
+tbayes.r = predict(bayes, WAUS.test, type = "raw")
+tbayes.pred <- ROCR::prediction(tbayes.r[,2], WAUS.test$MHT)
+tbayes.pref <- performance(tbayes.pred,"tpr","fpr")
+plot(tbayes.pref, col = "red", legend = TRUE)
+abline(0,1)
+
+
+
+trf.r = predict(randomForest, WAUSrf.test, type = "prob")
+trf.pred = ROCR::prediction(trf.r[,2], WAUSrf.test$MHT)
+trf.pref =  performance(trf.pred,"tpr","fpr")
+plot(trf.pref, col = "green", add = TRUE)
+abline(0,1)
+
+tt.r = predict(tree, WAUS.test, type = "where")
+tt.pred = ROCR::prediction(tt.r, WAUS.test$MHT)
+tt.pref = performance(tt.pred,"tpr","fpr")
+plot(tt.pref, col = "purple", add = TRUE)
+
+tbag.r = predict(bag, WAUS.test, type = "prob")
+tbag.pred = ROCR::prediction(tbag.r$prob[,2], WAUS.test$MHT)
+tbag.pref = performance(tbag.pred, "tpr", "fpr")
+plot(tbag.pref, col = "aquamarine", add = TRUE)
+
+tboost.r = predict(boost, WAUS.test, type = "prob")
+tboost.pred = ROCR::prediction(tboost.r$prob[,2], WAUS.test$MHT)
+tboost.pref = performance(tboost.pred, "tpr", "fpr")
+plot(tboost.pref, col = "darkorange", add = TRUE)
+
+legend("bottomright", legend=c("Bayes", "RandomForest","Decision Tree", "Bagging", "Boosting"), col=c("red", "green", "purple", "aquamarine", "darkorange"), lwd=2)
+
+```
+
+```{r}
+#Bayes
+bayes.auc = performance(tbayes.pred, "auc")
+bayes.auc = as.numeric(bayes.auc@y.values)
+
+#Random Forest
+rf.auc = performance(trf.pred, "auc")
+rf.auc = as.numeric(rf.auc@y.values)
+
+#Decision Tree
+tree.auc = performance(tt.pred, "auc")
+tree.auc = as.numeric(tree.auc@y.values)
+
+#Bagging
+bag.auc = performance(tbag.pred, "auc")
+bag.auc = as.numeric(bag.auc@y.values)
+
+#Boosting
+boost.auc = performance(tboost.pred, "auc")
+boost.auc = as.numeric(boost.auc@y.values)
+
+names = c("bayes", "random forest", "decision tree'", "bagging", "boosting")
+auc = c(bayes.auc, rf.auc, tree.auc, bag.auc, boost.auc)
+accuracy = c(0.525, 0.582, 0.532, 0.544, 0.5613)
+
+scores = cbind(names, auc, accuracy)
+
+scores
+```
+
+## 7. Is there a best Classifier?
+
+The best Classifier is Random Forest! It has the highest AUC (0.61) and Accuracy (0.582)
+
+## 8. Determine the most important variable to predict humidity and what variables can be omitted
+
+#### Bayes
+
+It is impossible to determine what is important and not for Bayes as the data is the model
+
+#### Decision Tree
+
+```{r}
+plot(tree)
+text(tree, pretty = 0)
+```
+
+The most important variables is Cloud9am, Rainfall and Temp9am as these immediately break the data into pure leaves. Whereas, Evaporation, Year and Windspeed9am are the least important as they are placed at the end of the leaves therefore, providing less information gain than those on top.
+
+#### Random Forest
+
+```{r}
+randomForest$importance
+```
+
+The least important is Cloud3pm, Cloud9am, RISK_MM and Location and the most important is MinTemp, Temp3pm and Temp9am. This is shown via the package
+
+#### Bagging
+
+```{r}
+bag$importance
+```
+
+The least important variables are Cloud3pm, WindGustSpeed and RainToday whereas, the most important variables are WindDir3pm, WindDir9am and WindGustDir. This is shown via the package
+
+#### Boosting
+
+```{r}
+boost$importance
+
+```
+
+The least important variables are Cloud3pm, Location and MaxTemp whereas, the most important variables are WindDir3pm, WindDir9am and WindGustDir.
+
+## 9. Create a Simple Classifier Model which a person can understand by hand.
+
+So I will produce my Tree model based on the factors I mentioned earlier so, Evaporation and Sunshine as there is not a single value for Location 18. Cloud9am and Cloud3pm as there is a significant amount of nulls. WindGustDir, WindDir9am and WindDir3pm was not even used in the Decision Tree produced so they will also be removed. Year does not have any effect on humidity. And furthermore, we will remove RainToday and RISK_MM as Rainfall answers that for us already.
+
+```{r}
+WAUS.train.simple = WAUS.train[,-c(1,6,7,8,10,11,16,17,20,21)]
+
+```
+
+```{r}
+tree = tree(MHT~., data = WAUS.train.simple, method = 'prob')
+
+plot(tree)
+text(tree, pretty = 0)
+```
+
+```{r}
+predict_tree = predict(tree, WAUS.test, type = "class")
+confusion_matrix_tree = table(WAUS.test$MHT, predict_tree)
+confusionMatrix(confusion_matrix_tree)
+
+```
+
+```{r}
+tt.r = predict(tree, WAUS.test, type = "where")
+tt.pred = prediction(tt.r, WAUS.test$MHT)
+tree.simple.auc = performance(tt.pred, "auc")
+tree.simple.auc = as.numeric(tree.simple.auc@y.values)
+```
+
+Let's add this to the other scores
+
+```{r}
+names = c("bayes", "random forest", "decision tree'", "bagging", "boosting", "simple decision tree")
+auc = c(bayes.auc, rf.auc, tree.auc, bag.auc, boost.auc, tree.simple.auc)
+accuracy = c(0.525, 0.582, 0.532, 0.544, 0.5613, 0.5302)
+
+scores = cbind(names, auc, accuracy)
+
+scores
+```
+
+The simple decision tree performs relatively the same to all the other classifiers will have produced. However, it has the second worse accuracy. But there's is only a very slight difference between the base decision tree and the simple one created. 0.01 difference. Furthermore, the simple decision tree has a notable amount difference in AUC to the base tree, the simple decision tree being better. Therefore, the simple model performs almost identical if not better than the base decision tree.
+
+## 10. Create the best tree-based classifier you can
+
+Let's use Cross Validation to produce a better Decision Tree
+
+```{r}
+cvtree = rpart(MHT~., data = WAUS.train, method = 'class')
+plot(cvtree)
+text(cvtree, pretty = 0)
+```
+
+```{r}
+cvtree_pred = predict(cvtree, WAUS.test, type = "class")
+confusion_matrix_cvtree = table(WAUS.test$MHT, cvtree_pred)
+confusionMatrix(confusion_matrix_cvtree)
+```
+
+```{r}
+tt.r = predict(tree, WAUS.test, type = "where")
+tt.pred = prediction(tt.r, WAUS.test$MHT)
+tree.cv.auc = performance(tt.pred, "auc")
+tree.cv.auc = as.numeric(tree.cv.auc@y.values)
+```
+
+Let's add the CV tree into the scores.
+
+```{r}
+names = c("bayes", "random forest", "decision tree'", "bagging", "boosting", "simple decision tree", "cv tree")
+auc = c(bayes.auc, rf.auc, tree.auc, bag.auc, boost.auc, tree.simple.auc, tree.cv.auc)
+accuracy = c(0.525, 0.582, 0.532, 0.544, 0.5613, 0.5302, 0.5389)
+
+scores = cbind(names, auc, accuracy)
+
+scores
+```
+
+The rpart contains cross validation within the package.
+
+So now this CV tree is significantly harder to use by hand than the simple decision tree however, it does have a better accuracy by 0.087. This jump was more siginifcant than the jump between the base and simple decision tree. And the tree also shares the same AUC and the simple decision tree.
+
+However, this CV tree still doesn't perform as well as the ensemble methods such as bagging, randomforest and boosting.
+
+## 11. Implement an Artificial Neural Network classifier and report its performance
+
+```{r include=FALSE}
+library(neuralnet)
+
+
+```
+
+```{r}
+WAUS.nn = WAUS
+
+#Remove catergorical features
+WAUS.nn = WAUS.nn[-c(8:11, 20, 21)]
+
+#Fix nulls
+WAUS.nn = WAUS.nn %>% drop_na(Year)
+WAUS.nn = na.roughfix(WAUS.nn)
+
+#Normalise data
+WAUS.nn[1:15] = scale(WAUS.nn[1:15])
+
+#Split the data
+train.row = sample(1:nrow(WAUS.nn), 0.7*nrow(WAUS.nn))
+WAUS.train.nn = WAUS.nn[train.row,]
+WAUS.test.nn = WAUS.nn[-train.row,]
+
+
+```
+
+```{r}
+nn = neuralnet(MHT ~ Year + Location + MinTemp + MaxTemp + Rainfall + Evaporation + Sunshine  + WindSpeed9am + WindSpeed3pm + Pressure9am + Pressure3pm + Cloud9am + Cloud3pm + Temp9am + Temp3pm , WAUS.train.nn, hidden = 3)
+```
+
+```{r}
+plot(nn, rep="best") 
+```
+
+```{r}
+nn_pred = compute(nn, WAUS.test.nn[,1:15])
+nn_predr = round(nn_pred$net.result, 0)
+
+confusion_matrix_nn = table(observed = WAUS.test.nn$MHT , predicted = nn_predr[,2])
+confusionMatrix(confusion_matrix_nn)
+```
+
+```{r}
+nn_pred = predict(nn, WAUS.test.nn[,1:15])
+
+nn.prediction = ROCR::prediction(nn_pred[,2], WAUS.test.nn$MHT)
+nn.pref = performance(nn.prediction, "auc")
+
+nn.auc = as.numeric(nn.pref@y.values)
+```
+
+```{r}
+names = c("bayes", "random forest", "decision tree'", "bagging", "boosting", "simple decision tree", "cv tree", "ann")
+auc = c(bayes.auc, rf.auc, tree.auc, bag.auc, boost.auc, tree.simple.auc, tree.cv.auc, nn.auc)
+accuracy = c(0.525, 0.582, 0.532, 0.544, 0.5613, 0.5302, 0.5389, 0.5769)
+
+scores = cbind(names, auc, accuracy)
+
+scores
+```
+
+ANN performs well compared to the other classifiers however, it still does not beat the best classifer RandomForest. With the current amount of data RandomForest will be better than ANN however, the more data provided the ANN will end performing better than RandomForest
+
+## 12. Fit a new classifier to the data, test and report its performance in the same way as for previous models
+
+<https://cran.r-project.org/web/packages/gbm/index.html>
+
+I will be using Gradient Boosting via the gbm package.
+
+Gradient boosting is built on top of the ensemble method boosting. Where boosting first assigns equal weights for each point in the training set and then fits a basic tree and then repeats n iterations of updating the weights misclassified items and updating the current tree.
+
+The difference between boosting and gradient boosting is that gradient boosting attempts to minimise the loss function by adding weak learners upon every iteration using gradient descent.
+
+```{r}
+library(gbm)
+
+```
+
+```{r}
+#we'll use the same pre processed data as random forest by removing caterorgical predictors and rough fixing all the nulls
+
+gradientBoost = gbm(MHT~., distribution = "gaussian", data = WAUSrf.train, n.trees = 100)
+```
+
+```{r}
+predict_gradientBoost = predict.gbm(gradientBoost, newdata = WAUSrf.test)
+confusion_matrix_bag = table(observed = WAUSrf.test$MHT, predicted = predict_bag$class)
+confusionMatrix(confusion_matrix_bag)
+```
+
+```{r include=FALSE}
+tgb.r = predict(gradientBoost, WAUSrf.test, type = "response")
+tgb.pred = ROCR::prediction(tgb.r, WAUSrf.test$MHT)
+tgb.pref =  performance(tgb.pred,"auc")
+
+
+gradientBoost.auc = as.numeric(tgb.pref@y.values)
+
+```
+
+```{r}
+names = c("bayes", "random forest", "decision tree'", "bagging", "boosting", "simple decision tree", "cv tree", "ann", "gradient boosting")
+auc = c(bayes.auc, rf.auc, tree.auc, bag.auc, boost.auc, tree.simple.auc, tree.cv.auc, nn.auc, gradientBoost.auc)
+accuracy = c(0.525, 0.582, 0.532, 0.544, 0.5613, 0.5302, 0.5389, 0.5769, 0.513)
+
+scores = cbind(names, auc, accuracy)
+
+scores
+```
+
+The gradient boost performs worse than every other classifier accuracy wise. However, it does not perform the worst at AUC. The poor performance could be due to the the way NA was handled within the pre processing. Due to using na.roughfix which imputes all the missing values with the mean/median.
